@@ -1,0 +1,5 @@
+run neural ismcts heuristic random
+M4 49.3 9.5 -8.8 -50.0
+P2 43.25 7.0 -1.5 -48.75
+P2+combine 49.0 0.58 -2.42 -47.17
+P1b 28.5 16.0 -1.0 -43.5

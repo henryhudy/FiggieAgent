@@ -1,0 +1,8 @@
+agent mean_delta win_share
+CFR-policy 46.6 0.46
+Heuristic 76.0 0.65
+IS-MCTS (M2) 109.8 0.85
+M3 (neural) 123.3 0.95
+M4 (pop.) 128.8 0.97
+P1 (+hist.) 125.8 0.94
+P2 (+belief) 127.75 0.95
