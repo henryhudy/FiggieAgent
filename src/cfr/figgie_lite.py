@@ -101,6 +101,42 @@ SPLITS: tuple[list[tuple[tuple[int, ...], tuple[int, ...]]], ...] = tuple(
 )
 
 
+def initial_hand_from_history(player: int, hand: tuple[int, ...], history: tuple) -> tuple[int, ...]:
+    """Recover an initial private hand by reversing public transfers."""
+    initial = list(hand)
+    for joint in history:
+        a0 = (joint >> 2) // ACTION_COUNT
+        a1 = (joint >> 2) % ACTION_COUNT
+        if bool((joint >> 1) & 1):
+            initial[a0 - 1] += -1 if player == 0 else 1
+        if bool(joint & 1):
+            initial[a1 - 1] += 1 if player == 0 else -1
+    result = tuple(initial)
+    if any(count < 0 for count in result) or sum(result) != 3:
+        raise ValueError("history and private hand are inconsistent")
+    return result
+
+
+def card_consistency_posterior(hand: tuple[int, ...]) -> list[float]:
+    """Return the exact posterior over goal suits from an initial private hand.
+
+    Figgie-Lite has a uniform prior over the four goal suits and a uniform
+    deal conditional on the world.  At the initial deal,
+    ``P(goal | hand)`` is therefore proportional to the number of deal splits
+    in that world which can yield ``hand``. The function deliberately does not
+    claim to infer an opponent policy from action history; that signal is
+    represented separately in the neural information-set encoder.
+    """
+    weights = [
+        float(sum(1 for own_hand, _ in SPLITS[goal] if own_hand == hand))
+        for goal in range(N_SUITS)
+    ]
+    total = sum(weights)
+    if total <= 0:
+        raise ValueError("hand is incompatible with every Figgie-Lite world")
+    return [weight / total for weight in weights]
+
+
 def sample_chance(rng: random.Random) -> tuple[int, tuple[int, ...], tuple[int, ...]]:
     """Sample a world and a deal jointly (uniform over worlds and splits)."""
     g = rng.randrange(N_SUITS)

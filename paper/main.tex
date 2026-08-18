@@ -41,8 +41,8 @@
 \pgfplotsset{compat=1.17}
 
 % ----------------------------------------------------------------------
-\title{\textbf{When Does Better Belief Improve Control?\\
-A Reproducible Study of Partial Observability in Figgie}}
+\title{\textbf{Bayesian Card-Consistency Features and Deep CFR\\
+in a Reduced Figgie Trading Game}}
 
 \author{Henry Hudepohl\\\small\texttt{henryhudepohl@g.ucla.edu}}
 
@@ -50,6 +50,12 @@ A Reproducible Study of Partial Observability in Figgie}}
 
 \emergencystretch=2em
 \begin{document}
+\input{deep_cfr_focus}
+\end{document}
+
+% Legacy manuscript retained below for reference. It is deliberately not
+% compiled: the current paper reports only the reduced-game Bayesian/Deep-CFR
+% study, while the older MCTS study remains available in repository history.
 \maketitle
 
 % ----------------------------------------------------------------------
@@ -172,7 +178,7 @@ bargaining \citep{lewis2017deal}. Figgie is unusual among these benchmarks in
 that its hidden state is tiny (twelve assignments) while nearly all skill lies
 in reading opponents' \emph{behavior} rather than in search depth; we
 therefore draw most directly on the opponent-modeling literature
-\citep{willemsen2021opponent} and adopt OpenSpiel's conventions for
+\citep{he2016opponent} and adopt OpenSpiel's conventions for
 reproducible game experiments \citep{lanctot2019openspiel}.
 
 \paragraph{Verification and calibration.} Because our claims concern a
