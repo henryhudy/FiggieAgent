@@ -41,7 +41,8 @@
 \pgfplotsset{compat=1.17}
 
 % ----------------------------------------------------------------------
-\title{\textbf{Trading in the Dark: Deep Reinforcement Learning for Jane Street's Figgie}}
+\title{\textbf{When Does Better Belief Improve Control?\\
+A Reproducible Study of Partial Observability in Figgie}}
 
 \author{Henry Hudepohl\\\small\texttt{henryhudepohl@g.ucla.edu}}
 
@@ -54,37 +55,30 @@
 % ----------------------------------------------------------------------
 \begin{abstract}
 \noindent
-We study a deep-reinforcement-learning (DRL) agent for \emph{Figgie}, Jane
-Street's hidden-information negotiation card game. Figgie combines a small
-hidden ``world'' (a suit-count assignment drawn from only twelve
-possibilities) with general-sum, multi-player, continuous-time trading, so
-the dominant skill is signal extraction and price discovery rather than
-planning depth. We build a discretized simultaneous-move engine, maintain an
-\emph{exact} strategy-free posterior over the hidden assignment (a dynamic
-program over deals, validated to ECE $0.02$--$0.08$ against simulator truth),
-and train an AlphaZero-style search agent, information-set Monte Carlo tree
-search (IS-MCTS) with neural policy/value/belief priors, via population-based
-self-play. Against three random bots the resulting agent wins $95$--$97\%$ of
-rounds (mean round delta $+\$126\pm5$) and outperforms every baseline in a
-fixed mixed pool. Our headline finding is a \emph{saturation within our
-evaluation setup}: the random-pool result plateaus at M4 parity
-($+\$109.8\to+\$127.8$ across our two major ablations, with the gain
-concentrated in the first neural-prior step), and additional
-machinery (a trade-history attention model, a learned behavior-conditioned
-belief head, Bayes-combining that belief into the observation, and value-head
-recalibration) does not move the random-pool metric. The same machinery
-\emph{does} help against a mixed pool of behavior-driven bots ($+5.25$ from the
-learned belief, another $+5.75$ from Bayes-combining it), revealing that
-behavior conditioning only pays off when opponents themselves encode
-information in their actions. We also report an honest negative result: a
-correctly implemented bundle-quote mechanism (verified by four engine
-invariants) is spammed by the policy (63\% of turns) but almost never filled
-(1.4\% of trades), because our opponents do not price information. All results
-are relative to the released fixed opponent pools and action abstraction; we
-claim no human comparison, and the only external baselines are hand-coded
-heuristics and the search-free Figgie-Lite CFR policy agent
-(\S\ref{sec:cfr}). All code, checkpoints, and
-seed-configurable evaluations are released.
+We study a concrete question about decision making under partial
+observability: when does a more accurate latent-state belief improve control?
+Our test bed is \emph{Figgie}, a small general-sum trading game with a
+12-way hidden suit-count assignment and hidden opponent hands. We build a
+discretized simulator, maintain an \emph{exact card-consistency posterior}
+over the hidden assignment, and train an information-set Monte Carlo tree
+search agent with neural policy, value, and history-conditioned belief heads.
+The posterior is calibrated against simulator truth (ECE $0.02$--$0.08$).
+We then evaluate both intermediate inference and downstream decisions under
+two controlled opponent pools. On a random pool, stronger belief machinery
+does not improve the main control metric after the first neural-prior step.
+On a mixed pool whose opponents' actions encode more information, the learned
+belief and its product combination with the exact posterior improve the
+reported single-seed A/B result by $+5.25$ and a further $+5.75$ mean dollars
+per round. This contrast is the paper's central result: calibrated latent
+state estimation matters for control only when the environment exposes
+decision-relevant behavioral signal. We also report a negative result:
+bundle quotes are engine-correct but are posted on 63\% of turns and fill in
+only 1.4\% of trades against our pools. Finally, a \emph{tabular},
+chance-sampled CFR baseline in a reduced two-player game is evaluated with an
+exact reduced-game exploitability calculation; it is not Deep CFR and does
+not establish equilibrium quality for full Figgie. All conclusions are
+simulator- and fixed-pool-specific, with frozen checkpoints and
+seed-configurable evaluation code released for replication.
 \end{abstract}
 
 % ----------------------------------------------------------------------
@@ -103,10 +97,9 @@ suit-count assignment and the distribution of cards in opponents' hands, and
 in which nearly all of the skill is extracting beliefs from \emph{others'
 behavior} while concealing one's own.
 
-This paper reports the methodology and results of a complete DRL pipeline for
-Figgie: an exact belief tracker, an information-set search agent, a compact
-neural network, and a population-based self-play loop. We make the following
-contributions.
+This paper is a controlled study of the link between state estimation and
+action selection in a small imperfect-information game. It does not claim to
+measure broad reasoning ability. We make the following contributions.
 
 \begin{enumerate}[leftmargin=1.5em]
   \item \textbf{A rule-complete, discretized environment and exact belief
@@ -117,29 +110,26 @@ contributions.
   calibrated to simulator ground truth (assignment ECE $0.02$--$0.04$; goal
   marginal ECE $0.04$--$0.08$; goal-suit argmax $39$--$41\%$ vs.\ $25\%$
   chance).
-  \item \textbf{An IS-MCTS agent with neural priors trained by population
-  self-play.} Belief-consistent determinized search (as in the ReBeL line
-  \citep{brown2020rebel}) with PUCT selection, a 4-player value head, a
-  learned belief head, and a history pathway (flat MLP, later single-head
-  self-attention). Against three random bots it wins $95$--$97\%$ of rounds
-  with mean round delta $+\$126\pm5$.
-  \item \textbf{A saturation finding.} The random-pool headline plateaus at
-  M4 parity; gains from $+109.8$ to $+123.3$ come from the first
-  neural-prior step, and later modules (attention history, learned belief,
-  Bayes-combine, value recalibration) do not move it. The same modules do
-  move the mixed-pool result, giving a consistent picture: \emph{behavior
-  conditioning only helps against behavior-driven opponents}.
+  \item \textbf{A belief-conditioned control agent.} We combine
+  belief-consistent determinized search, neural policy/value priors, a
+  history-conditioned belief head, and population self-play. Against three
+  random bots it wins $95$--$97\%$ of rounds with mean round delta
+  $+\$126\pm5$ in the released evaluation setup.
+  \item \textbf{A controlled inference-to-control finding.} The random-pool
+  metric plateaus after the first neural-prior step, while the learned belief
+  helps in the behavior-driven mixed pool. This establishes a conditional
+  result within the simulator, not a claim of general reasoning or broad
+  opponent-modeling capability.
   \item \textbf{Two honest negative results.} (i)~The scalar value head is
   essentially uninformative in the liquid random-pool regime
   (corr$\approx0$), yet a recalibration (P1v) restores top-bin calibration;
   (ii)~bundle quotes are mechanism-correct but the policy spams non-crossing
   bids rather than using them profitably.
-  \item \textbf{An external, search-free baseline.} A two-player zero-sum
-  reduction (Figgie-Lite) is solved exactly with CFR, bounding the reduced-game
-  exploitability of our approach ($\varepsilon \approx 0.04$--$0.09$, near
-  zero), and the resulting policy agent -- no search, no neural net -- wins
-  $+\$46.6$ in the random pool, isolating the value of search and neural
-  priors ($\S\ref{sec:cfr}$).
+  \item \textbf{A reduced-game diagnostic.} We train a tabular,
+  chance-sampled CFR policy in a two-player zero-sum reduction and compute
+  exploitability exactly for that reduction. The policy transfers as a
+  search-free baseline to the full pool, but neither the algorithm nor the
+  guarantee extends to full Figgie (\S\ref{sec:cfr}).
   \item \textbf{Verified, calibrated engineering.} The engine is checked
   against seven formal properties by a QuickCheck-style suite of 48 passing
   assertions, and the belief tracker, value head, and training stability are
@@ -505,6 +495,15 @@ attributable to the specific change rather than to retraining noise.
   $+\$43.25$ in different runs), so A/B comparisons share a seed and a run.
 \end{itemize}
 
+\paragraph{Interpretation boundary.}
+This protocol separates two questions that are often conflated: whether a
+model estimates the hidden assignment accurately, and whether that estimate
+improves action selection. The random and mixed pools are interventions on
+the availability of behavioral signal, not external benchmarks. The
+single-seed mixed-pool A/B values are therefore evidence for a hypothesis to
+be replicated across independent seeds, not a population-level estimate or a
+claim about general reasoning.
+
 % ----------------------------------------------------------------------
 \section{Verification and validation}
 \label{sec:vv}
@@ -769,19 +768,21 @@ P2$^\star$ (belief)    & +29.75 & ---    & ---      & ---      & --- \\
 
 The 4-player game is general-sum, so there is no well-defined Nash
 equilibrium and the pool benchmarks above can only establish empirical
-domination. To add a game-theoretic measurement, we reduce Figgie to a
-two-player, zero-sum subgame, \emph{Figgie-Lite}, and solve it exactly with
-chance-sampled counterfactual regret minimization (CFR)
-\citep{zinkevich2008regret, lanctot2009mccfr}. Figgie-Lite keeps the
+domination. To add a game-theoretic diagnostic, we reduce Figgie to a
+two-player, zero-sum subgame, \emph{Figgie-Lite}, and train a \emph{tabular}
+policy with chance-sampled CFR \citep{zinkevich2008regret, lanctot2009mccfr}.
+This is not Deep CFR, and it does not solve the full game. Figgie-Lite keeps the
 structure that makes the full game hard: a hidden goal suit, a
 world-dependent deck (the goal suit appears three times, the others once),
 and simultaneous buy-only actions at a fixed price, so a buy is a public
 signal. Each tick is resolved in player order (player 0 then player 1) and
 the public history records both actions and both buy outcomes. With 4 worlds
 $\times$ 8 deals $\times$ 5 actions the tree is small enough to enumerate
-both players' actions exactly at every node; the only sampling is the chance
-node. The resulting average strategy is a strict improvement over the
-hand-crafted references and nearly unexploitable in the reduction.
+both players' actions exactly at every node; chance is sampled during CFR
+training, while the reported strategy value and best-response exploitability
+are evaluated exactly in the reduction. The resulting average strategy is a
+strict improvement over the hand-crafted references and has low measured
+exploitability in Figgie-Lite.
 
 \begin{table}[t]
 \centering
@@ -1177,22 +1178,21 @@ values, which becomes worthwhile once features and belief carry signal.
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented a complete DRL methodology for Figgie: exact belief tracking,
-information-set search, neural priors, population self-play, and a measured
-results section with one central and two auxiliary findings, all backed by a
-property-verified engine and validated components (\S\ref{sec:vv}). The central
-finding is saturation: on the random-pool benchmark the agent reaches
-$\sim$95--97\% win share and $\sim$$+\$126\pm5$ mean round delta by M3/M4,
-and later modules do not move it, while the same modules deliver consistent
-gains ($+5.25$, $+5.75$) against a mixed behavior-driven pool. The auxiliary
-findings are honest negatives: bundle quoting is mechanism-correct but not
-learned, and the scalar value head is uninformative in the liquid regime but
-recalibratable. A two-player zero-sum reduction (Figgie-Lite) adds a
-game-theoretic measurement: CFR converges there to near-zero exploitability,
-and a policy agent trained on the reduction transfers competitively to the
-full pool (\S\ref{sec:cfr}). The released harness (engine with 48 passing
-invariant tests, belief tracker, agents, trainer, and seed-configurable evals)
-makes every number in this paper reproducible.
+We presented a reproducible study of belief-conditioned control in Figgie:
+exact card-consistency inference, information-set search, neural priors, and
+population self-play, backed by a property-verified engine and component-level
+calibration checks (\S\ref{sec:vv}). The central result is conditional: after
+the first neural-prior improvement, stronger belief machinery does not improve
+the random-pool control metric, but it improves the reported mixed-pool A/B
+comparison when opponents' behavior carries signal. The resulting hypothesis
+is not that the agent has general reasoning ability. It is that an improved
+latent-state representation affects control only when the observation process
+contains information the policy can exploit. The bundle and value-head results
+are useful negative controls: a correct mechanism is not automatically useful,
+and calibrated state features do not by themselves guarantee better action
+selection. Figgie-Lite supplies a separate tabular CFR diagnostic with exact
+evaluation only in that reduced game. The released harness makes these claims
+straightforward to rerun and extend with multi-seed evaluations.
 
 Taken together, the results suggest a sharper hypothesis than ``our method
 improves play'': \emph{in negotiation games, the bottleneck is not stronger
