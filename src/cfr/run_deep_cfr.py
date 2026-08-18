@@ -1,4 +1,4 @@
-"""Reproduce a fixed-seed Figgie-Lite tabular-CFR versus Deep-CFR comparison."""
+"""Reproduce Figgie-Lite Deep CFR posterior ablations with exact evaluation."""
 
 from __future__ import annotations
 
@@ -16,13 +16,32 @@ def run_comparison(
     iterations: int,
     config: DeepCFRConfig,
 ) -> dict:
-    """Train both methods and evaluate every final policy exactly."""
+    """Train both Deep CFR variants and tabular CFR, then evaluate exactly."""
     rows = []
     evaluator = CFR(ticks=config.ticks, seed=0)
     for seed in seeds:
-        deep = DeepCFR(config, seed=seed)
-        deep.iterate(iterations)
-        deep_eps = evaluator.exploitability(deep.average_strategy())["eps"]
+        deep_with_posterior = DeepCFR(config, seed=seed)
+        deep_with_posterior.iterate(iterations)
+        posterior_eps = evaluator.exploitability(
+            deep_with_posterior.average_strategy()
+        )["eps"]
+
+        no_posterior_config = DeepCFRConfig(
+            ticks=config.ticks,
+            hidden_size=config.hidden_size,
+            memory_capacity=config.memory_capacity,
+            learning_rate=config.learning_rate,
+            batch_size=config.batch_size,
+            advantage_steps=config.advantage_steps,
+            strategy_steps=config.strategy_steps,
+            train_every=config.train_every,
+            include_posterior=False,
+        )
+        deep_without_posterior = DeepCFR(no_posterior_config, seed=seed)
+        deep_without_posterior.iterate(iterations)
+        no_posterior_eps = evaluator.exploitability(
+            deep_without_posterior.average_strategy()
+        )["eps"]
 
         tabular = CFR(ticks=config.ticks, seed=seed)
         tabular.iterate(iterations)
@@ -32,7 +51,8 @@ def run_comparison(
         rows.append(
             {
                 "seed": seed,
-                "deep_cfr_exploitability": deep_eps,
+                "deep_cfr_bayesian_exploitability": posterior_eps,
+                "deep_cfr_no_posterior_exploitability": no_posterior_eps,
                 "tabular_cfr_exploitability": tabular_eps,
             }
         )
@@ -56,9 +76,11 @@ def run_comparison(
             "advantage_steps": config.advantage_steps,
             "strategy_steps": config.strategy_steps,
             "train_every": config.train_every,
+            "include_posterior": config.include_posterior,
         },
         "rows": rows,
-        "deep_cfr": summary("deep_cfr_exploitability"),
+        "deep_cfr_bayesian": summary("deep_cfr_bayesian_exploitability"),
+        "deep_cfr_no_posterior": summary("deep_cfr_no_posterior_exploitability"),
         "tabular_cfr": summary("tabular_cfr_exploitability"),
     }
 

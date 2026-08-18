@@ -1,40 +1,44 @@
 \maketitle
 
 \begin{abstract}
-We study neural counterfactual-regret learning in a small trading game with hidden state. The full Figgie game is multi-player and general-sum, so we do not claim an equilibrium calculation for it. Instead, we define Figgie-Lite, a two-player zero-sum reduction with four hidden goal-suit worlds, private hands, public buy outcomes, and an exact evaluator. Each information set contains an exact Bayesian card-consistency posterior computed from the private hand, together with public action history. We implement an external-sampling Deep CFR learner with neural advantage models, reservoir memories, and a learned average strategy. In a five-seed, two-tick experiment at 2,000 iterations, its mean exact exploitability is $5.73 \pm 0.23$ payoff units, compared with $1.09 \pm 0.03$ for tabular CFR. The result is negative but informative: on this tiny game, neural function approximation does not yet beat the table it is intended to replace.
+Deep counterfactual regret minimization (Deep CFR) replaces the information-set tables of counterfactual regret minimization with neural networks. This can be useful when tables are too large, but it also introduces approximation error. We study that trade-off in Figgie-Lite, a two-player zero-sum trading reduction with four hidden goal-suit worlds, private cards, public buy outcomes, and an exact exploitability evaluator. The central intervention is an exact Bayesian card-consistency feature. At each information set it conditions on the player's private hand and on all observed card-transfer outcomes, but it does not assume an opponent action model. We compare Deep CFR with and without this feature, as well as tabular CFR, across five fixed seeds after 2,000 iterations. Exact exploitability is $5.549 \pm 0.364$ for Bayesian Deep CFR, $5.413 \pm 0.404$ without the feature, and $1.090 \pm 0.030$ for tabular CFR. The feature does not improve this small benchmark at the tested budget. The result is a bounded negative finding: exact state evidence alone does not remove the optimization cost of neural regret approximation when the tabular problem is still small.
 \end{abstract}
 
 \section{Introduction}
 
-Imperfect-information learning combines two distinct problems: infer what is hidden and choose an action that is robust to uncertainty. Figgie is a market-themed card game from Jane Street with private hands and a hidden suit assignment \citep{figgierules}. Its full form is multi-player and general-sum, which makes a standard two-player exploitability calculation inappropriate.
+Learning in imperfect-information games requires an agent to act with incomplete knowledge of the state. Counterfactual regret minimization (CFR) provides a principled tabular method for two-player zero-sum games, while Deep CFR replaces tables with learned value and strategy approximators \citep{zinkevich2007regret,brown2019deepcfr}. A common intuition is that a more explicit representation of hidden-state evidence should make the neural problem easier. This report tests that intuition in a setting where the evidence and the final policy quality can both be checked exactly.
 
-This report asks a narrower question. In a reduced Figgie game with an exact evaluator, what happens when a Deep CFR learner receives an explicit Bayesian card-consistency feature? The goal is not to make a broad claim about reasoning, nor to present MCTS as the main result. Search motivated the original project, but the present report treats it only as background. The main object is a neural approximation to counterfactual regret learning and a transparent comparison to tabular CFR.
+Figgie is a market-themed card game created by Jane Street \citep{figgierules}. Its full form is multiplayer and general-sum, so standard two-player exploitability is not the appropriate evaluation target. We instead use Figgie-Lite, a deliberately small two-player zero-sum reduction. The reduction retains a hidden goal suit, private hands, public action outcomes, and card transfers, while making exact evaluation feasible.
+
+Our question is narrow: \emph{does an exact posterior over card-consistent hidden worlds help Deep CFR in Figgie-Lite?} We add the posterior as an input feature, compare it with a no-posterior network of the same architecture, and report a tabular CFR reference. We find no advantage at this scale. This is informative precisely because the measurement is exact: the posterior is a correct representation of the card evidence, yet it does not make the neural approximation competitive with the table.
 
 \section{Related work}
 
-Counterfactual regret minimization (CFR) minimizes counterfactual regret in two-player imperfect-information games \citep{zinkevich2007regret}. Monte Carlo CFR makes those updates practical through sampled traversals, including external sampling \citep{lanctot2009mccfr}. Deep CFR replaces tabular advantage and strategy representations with neural approximators and replay memories \citep{brown2019deepcfr}. Those results motivate our implementation, but they do not imply that function approximation helps in every small game.
+CFR minimizes counterfactual regret in extensive games with imperfect information \citep{zinkevich2007regret}. Monte Carlo CFR uses sampled traversals, including external sampling, to make those updates practical \citep{lanctot2009mccfr}. Deep CFR uses neural advantage networks and replay memories in place of tabular regret and average-strategy representations \citep{brown2019deepcfr}. These methods motivate the implementation here, but the original Deep CFR results do not imply that function approximation should help in every small game.
 
-\section{Figgie-Lite and Bayesian inference}
+\section{Figgie-Lite and exact card evidence}
 
-Figgie-Lite retains the hidden-world structure of Figgie while removing the parts that prevent a standard exploitability calculation. There are two players and four possible goal suits. Conditional on goal suit $g$, the deck contains three cards of suit $g$ and one card of every other suit. Each player receives three cards. At each of two ticks, both players choose \textsc{Pass} or \textsc{Buy}$(s)$ for one of four suits. A successful buy transfers one card at a fixed price and the success indicator is public. Settlement is the difference between players' cash plus ten times their goal-suit card count.
+Figgie-Lite has two players and four possible goal suits. Conditional on goal suit $g$, the deck contains three cards of suit $g$ and one card of each other suit. Each player receives three cards. At each of two ticks, both players choose \textsc{Pass} or \textsc{Buy}$(s)$ for one of four suits. A successful buy transfers one card at a fixed price. The action and its success flag are public. At settlement, payoff is the difference between each player's cash plus ten times the number of goal-suit cards held.
 
-The reduction is two-player and zero-sum, so strategy value and best-response exploitability can be evaluated by enumerating all four worlds and compatible deals. It is not a model of the full market mechanics, and no result below transfers as an equilibrium guarantee to full Figgie.
+The game is zero-sum, so we can enumerate every chance world and compatible deal to compute exploitability exactly. It is not a model of the full Figgie market, and the results below do not establish an equilibrium guarantee for the full game.
 
-Let $h$ be a player's initial private hand and $g \in \{0,1,2,3\}$ the hidden goal suit. With a uniform prior over $g$ and a uniform deal within each world, the exact root posterior is
+Let $h_0$ denote the player's initial private hand and let $r_{1:t}$ denote the public action and buy-outcome records through tick $t$. For every candidate goal suit, we reconstruct the other opening hand from the candidate deck and replay the public transfers. The feature is
 \[
-P(g\mid h) = \frac{\#\{(h,h') \in \mathrm{Splits}(g)\}}{\sum_{g'} \#\{(h,h') \in \mathrm{Splits}(g')\}}.
+P(g \mid h_0, r_{1:t}) \propto
+P(g)P(h_0 \mid g)
+\mathbb{I}\{\text{$r_{1:t}$ is card-consistent with $g$ and $h_0$}\}.
 \]
-In words, a world receives probability in proportion to the number of deals that could have produced the observed hand. A hand containing three cards of one suit identifies that suit as the goal world in Figgie-Lite. The encoder also receives the full public history: both actions and both buy-success flags at each earlier tick. This feature is exact card-consistency inference, not a full posterior over strategic behavior. The neural network must learn any additional action likelihood from history.
+The indicator makes this calculation exact for card constraints and public transfer outcomes. The actions identify which transfers to replay, but no likelihood is assigned to an opponent selecting one action over another. Thus the feature is not a posterior over strategic behavior. The full public record remains in the neural input, allowing the network to learn behavioral patterns if they are useful.
 
-\section{Deep CFR implementation}
+\section{Deep CFR and ablation}
 
-The implementation follows the advantage-and-strategy decomposition of Deep CFR \citep{brown2019deepcfr}. Each player has a small two-hidden-layer ReLU advantage network. Its input is the four private card counts, four Bayesian posterior probabilities, a player indicator, and a fixed-width encoding of public history. Positive predicted advantages are normalized by regret matching to form the current policy.
+We implement an external-sampling Deep CFR learner. Each player has a two-hidden-layer ReLU advantage network. Positive predicted advantages are normalized by regret matching. One traversal per player is run at every iteration: the traversing player enumerates actions and the opponent action is sampled. Advantage targets enter bounded reservoir memories; visited behavior strategies, weighted by the traverser's reach, enter a separate reservoir. The final strategy network is trained by weighted cross-entropy. All final policies are scored by the exact evaluator, not by sampled self-play.
 
-At every iteration, we sample one world and deal, then run one external-sampling traversal for each player. The traversing player enumerates its five actions while the other player's action is sampled from its current regret-matched policy. Instantaneous action-value differences are added to that player's bounded reservoir memory. Visited behavior strategies, with player reach weights, enter a separate strategy reservoir. At fixed intervals the advantage networks are fit by mean squared error; after training, the average strategy network is fit by weighted cross-entropy. All reported policies are evaluated by the exact tree evaluator, not sampled self-play.
+The Bayesian network receives four current private card counts, four posterior probabilities, a two-element player indicator, and a fixed-width public-history encoding. The no-posterior ablation removes only the four posterior values. It retains the private cards, player indicator, actions, and buy-success flags, so the comparison isolates the explicit card-evidence feature rather than withholding public information.
 
 \section{Experiment}
 
-We compare tabular chance-sampled CFR with the neural Deep CFR approximation at the same two-tick horizon and 2,000 training iterations. The fixed random seeds are $\{3,7,11,19,23\}$. Deep CFR uses two 64-unit hidden layers, a 20,000-item memory cap, updates every 25 iterations, and Adam at $2\times10^{-3}$. The table reports total exploitability $\varepsilon_0+\varepsilon_1$ in payoff units. Lower is better. Means and standard deviations are over seeds; exploitability itself is exact for the reduced game.
+We train three methods for 2,000 iterations at a two-tick horizon: tabular chance-sampled CFR, Deep CFR with card-consistency posterior, and Deep CFR without it. The five fixed seeds are $\{3,7,11,19,23\}$. Both neural variants use two 64-unit hidden layers, a 20,000-item memory cap, Adam at $2\times10^{-3}$, a batch size of 128, advantage updates every 25 iterations with 25 optimization steps, and 240 final strategy-fitting steps. Table~\ref{tab:main-result} reports total exploitability $\varepsilon_0+\varepsilon_1$ in payoff units. Lower is better. Means and sample standard deviations are across seeds; exploitability for a completed policy is exact in Figgie-Lite.
 
 \begin{table}[t]
 \centering
@@ -43,25 +47,29 @@ We compare tabular chance-sampled CFR with the neural Deep CFR approximation at 
 \label{tab:main-result}
 \begin{tabular}{lrrrrrr}
 \toprule
-Method & Seed 3 & Seed 7 & Seed 11 & Seed 19 & Seed 23 & Mean $\pm$ s.d. \\
+Method & 3 & 7 & 11 & 19 & 23 & Mean $\pm$ s.d. \\
 \midrule
 Tabular CFR & 1.122 & 1.087 & 1.110 & 1.045 & 1.085 & 1.090 $\pm$ 0.030 \\
-Deep CFR & 5.698 & 5.638 & 5.710 & 6.116 & 5.487 & 5.730 $\pm$ 0.233 \\
+Deep CFR, no posterior & 6.125 & 5.186 & 5.179 & 5.347 & 5.229 & 5.413 $\pm$ 0.404 \\
+Deep CFR, Bayesian & 5.114 & 5.933 & 5.409 & 5.925 & 5.367 & 5.549 $\pm$ 0.364 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \section{Results and limitations}
 
-At this budget, the Deep CFR policy is consistently more exploitable than tabular CFR (Table~\ref{tab:main-result}). This is not evidence that Deep CFR is invalid. It is evidence that neural approximation carries a cost when the information-set table is small enough to represent directly. Tabular CFR has no approximation error and reaches substantially lower exploitability with the same number of sampled chance outcomes.
+The explicit card-consistency posterior does not improve the neural result at this training budget. It lowers exploitability for seed 3 but is higher in the other four seeds, with a mean increase of 0.136 payoff units relative to the no-posterior network. Both neural variants remain substantially more exploitable than tabular CFR. The main conclusion is not that Bayesian state evidence is unhelpful in general. It is that, in this small reduction, correct card evidence alone does not compensate for the optimization and approximation error introduced by neural regret models.
 
-The Bayesian feature separates what the game reveals directly from what a network must infer. The private hand determines an exact root consistency posterior, while public buy outcomes and actions remain available for learning behavioral signal. This experiment does not isolate a posterior-versus-no-posterior ablation, so it does not establish that the feature alone causes the measured performance. That ablation, and larger games where the tabular baseline no longer fits, are the appropriate next experiments.
+The experiment is deliberately limited. It uses a two-tick game, five fixed seeds, a single network size, and one training budget. It does not test larger games where table sizes are prohibitive, alternative encodings, learned behavior likelihoods, or richer neural architectures. A stronger follow-up would sweep horizon and memory size, measure posterior calibration separately, and preregister the ablation before training. The study therefore supports a narrow reproducibility claim, not a claim that it measures broad reasoning or that it predicts performance in full Figgie.
 
-MCTS remains historical inspiration for the broader Figgie project, not the central method or source of results in this manuscript. The conclusions are limited to this reduction, architecture, and training budget.
+\section{Reproducibility and declarations}
 
-\section{Reproducibility}
+The \texttt{src/cfr} directory contains the Figgie-Lite rules, neural learner, exact evaluator, and fixed-seed runner. A committed JSON results file under \texttt{paper} records every value in Table~\ref{tab:main-result}. Focused tests validate posterior updates after public transfers, the no-posterior encoder, valid neural policies, and finite exact exploitability.
 
-The reduction is implemented in \texttt{figgie\_lite.py}; the neural learner is \texttt{deep\_cfr.py}; and the exact evaluator is \texttt{cfr.py}. The command-line runner \texttt{run\_deep\_cfr.py} recreates the fixed-seed comparison. Unit tests check the fixed-width encoder, exact card-consistency posterior, valid neural strategy probabilities, and finite exact exploitability. The fixed seeds and hyperparameters above are enough to recreate the reported table without access to the full Figgie simulator.
+\paragraph{Data availability.} No external dataset was used. All chance outcomes are generated by the released Figgie-Lite rules.
+\paragraph{Ethics.} This work uses simulated game play only and does not involve human participants or personal data.
+\paragraph{Author contributions.} Henry Hudepohl designed the project, implemented the system, ran experiments, and wrote the manuscript.
+\paragraph{Conflict of interest and funding.} The author reports no conflicts of interest and no external funding for this work.
 
 \bibliographystyle{plainnat}
 \bibliography{references}

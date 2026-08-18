@@ -1,0 +1,65 @@
+{
+  "config": {
+    "seeds": [
+      3,
+      7,
+      11,
+      19,
+      23
+    ],
+    "iterations": 2000,
+    "ticks": 2,
+    "hidden_size": 64,
+    "memory_capacity": 20000,
+    "learning_rate": 0.002,
+    "batch_size": 128,
+    "advantage_steps": 25,
+    "strategy_steps": 240,
+    "train_every": 25,
+    "include_posterior": true
+  },
+  "rows": [
+    {
+      "seed": 3,
+      "deep_cfr_bayesian_exploitability": 5.114111081439535,
+      "deep_cfr_no_posterior_exploitability": 6.124870951041062,
+      "tabular_cfr_exploitability": 1.1219857205194095
+    },
+    {
+      "seed": 7,
+      "deep_cfr_bayesian_exploitability": 5.932847815821301,
+      "deep_cfr_no_posterior_exploitability": 5.185673111965495,
+      "tabular_cfr_exploitability": 1.0868208956507361
+    },
+    {
+      "seed": 11,
+      "deep_cfr_bayesian_exploitability": 5.408545082589896,
+      "deep_cfr_no_posterior_exploitability": 5.179259197919682,
+      "tabular_cfr_exploitability": 1.1097894415821952
+    },
+    {
+      "seed": 19,
+      "deep_cfr_bayesian_exploitability": 5.924711941061542,
+      "deep_cfr_no_posterior_exploitability": 5.3472563475132855,
+      "tabular_cfr_exploitability": 1.0448831094050401
+    },
+    {
+      "seed": 23,
+      "deep_cfr_bayesian_exploitability": 5.366709063867749,
+      "deep_cfr_no_posterior_exploitability": 5.228895973368559,
+      "tabular_cfr_exploitability": 1.084711913925336
+    }
+  ],
+  "deep_cfr_bayesian": {
+    "mean": 5.549384996956005,
+    "sample_sd": 0.3642059197628027
+  },
+  "deep_cfr_no_posterior": {
+    "mean": 5.413191116361617,
+    "sample_sd": 0.40351234967271926
+  },
+  "tabular_cfr": {
+    "mean": 1.0896382162165434,
+    "sample_sd": 0.029528199460452913
+  }
+}

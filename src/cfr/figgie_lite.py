@@ -137,6 +137,59 @@ def card_consistency_posterior(hand: tuple[int, ...]) -> list[float]:
     return [weight / total for weight in weights]
 
 
+def outcome_conditioned_posterior(
+    player: int, hand: tuple[int, ...], history: tuple
+) -> list[float]:
+    """Return the exact card-consistency posterior at a public information set.
+
+    The calculation conditions on the player's reconstructed initial hand and
+    on every public buy-success flag.  Actions are used to replay transfers,
+    but no likelihood is assigned to an opponent choosing one action rather
+    than another.  It is therefore exact for the game's card constraints, not
+    a Bayesian model of strategic behavior.
+    """
+    initial_hand = initial_hand_from_history(player, hand, history)
+    weights: list[float] = []
+    for goal in range(N_SUITS):
+        deck = deck_counts(goal)
+        opponent_initial = tuple(
+            deck[suit] - initial_hand[suit] for suit in range(N_SUITS)
+        )
+        if any(count < 0 for count in opponent_initial):
+            weights.append(0.0)
+            continue
+
+        hands = (
+            [list(initial_hand), list(opponent_initial)]
+            if player == 0
+            else [list(opponent_initial), list(initial_hand)]
+        )
+        cash = [START_CASH, START_CASH]
+        consistent = True
+        for joint in history:
+            a0 = (joint >> 2) // ACTION_COUNT
+            a1 = (joint >> 2) % ACTION_COUNT
+            recorded_s0 = bool((joint >> 1) & 1)
+            recorded_s1 = bool(joint & 1)
+            hands, cash, s0 = apply_buy(hands, cash, 0, a0)
+            hands, cash, s1 = apply_buy(hands, cash, 1, a1)
+            if (s0, s1) != (recorded_s0, recorded_s1):
+                consistent = False
+                break
+        if consistent and tuple(hands[player]) == hand:
+            # Chance samples uniformly within each world.  This factor is
+            # retained even though Figgie-Lite currently has equally sized
+            # split sets, so the function remains correct if that changes.
+            weights.append(1.0 / len(SPLITS[goal]))
+        else:
+            weights.append(0.0)
+
+    total = sum(weights)
+    if total <= 0:
+        raise ValueError("information set is incompatible with every Figgie-Lite world")
+    return [weight / total for weight in weights]
+
+
 def sample_chance(rng: random.Random) -> tuple[int, tuple[int, ...], tuple[int, ...]]:
     """Sample a world and a deal jointly (uniform over worlds and splits)."""
     g = rng.randrange(N_SUITS)

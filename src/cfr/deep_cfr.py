@@ -27,9 +27,8 @@ from .figgie_lite import (
     ACTION_COUNT,
     SPLITS,
     apply_buy,
-    card_consistency_posterior,
     encode_joint,
-    initial_hand_from_history,
+    outcome_conditioned_posterior,
     payoff,
 )
 
@@ -110,6 +109,7 @@ class DeepCFRConfig:
     advantage_steps: int = 40
     strategy_steps: int = 160
     train_every: int = 25
+    include_posterior: bool = True
 
 
 class DeepCFRStrategy(Strategy):
@@ -126,21 +126,22 @@ class DeepCFRStrategy(Strategy):
 
 
 class InfoSetEncoder:
-    """Lossless fixed-width encoding of a Figgie-Lite information set."""
+    """Fixed-width encoding of a Figgie-Lite information set."""
 
-    def __init__(self, ticks: int):
+    def __init__(self, ticks: int, include_posterior: bool = True):
         self.ticks = ticks
-        # hand counts (4), an exact card-consistency posterior (4),
+        self.include_posterior = include_posterior
+        # Hand counts (4), optional exact card-consistency posterior (4),
         # acting player (2), and each public history item: two one-hot actions
         # plus the two public buy-success flags.
-        self.size = 10 + ticks * (2 * ACTION_COUNT + 2)
+        self.size = 6 + (4 if include_posterior else 0) + ticks * (2 * ACTION_COUNT + 2)
 
     def encode(self, player: int, hand: tuple, history: tuple) -> torch.Tensor:
         if len(history) > self.ticks:
             raise ValueError("history is longer than the configured horizon")
         values = [count / 3.0 for count in hand]
-        initial_hand = initial_hand_from_history(player, hand, history)
-        values.extend(card_consistency_posterior(initial_hand))
+        if self.include_posterior:
+            values.extend(outcome_conditioned_posterior(player, hand, history))
         values.extend([1.0 if player == 0 else 0.0, 1.0 if player == 1 else 0.0])
         for index in range(self.ticks):
             row = [0.0] * (2 * ACTION_COUNT + 2)
@@ -171,7 +172,7 @@ class DeepCFR:
         self.rng = random.Random(seed)
         if seed is not None:
             torch.manual_seed(seed)
-        self.encoder = InfoSetEncoder(config.ticks)
+        self.encoder = InfoSetEncoder(config.ticks, config.include_posterior)
         self.advantage_models = [_Network(self.encoder.size, config.hidden_size) for _ in range(2)]
         self.strategy_model = _Network(self.encoder.size, config.hidden_size)
         self.advantage_memory = [
